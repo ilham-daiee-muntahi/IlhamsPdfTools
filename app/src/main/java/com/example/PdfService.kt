@@ -5,6 +5,7 @@ import android.net.Uri
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -19,7 +20,7 @@ object PdfService {
     suspend fun splitPdf(context: Context, sourceUri: Uri, originalName: String, rangesString: String, outputDir: File, onProgress: suspend (Float) -> Unit = {}): List<File> = withContext(Dispatchers.IO) {
         val resultFiles = mutableListOf<File>()
         context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-            PDDocument.load(inputStream).use { sourceDoc ->
+            PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly()).use { sourceDoc ->
                 val numPages = sourceDoc.numberOfPages
                 val ranges = parseRanges(rangesString, numPages)
                 val totalRanges = ranges.size
@@ -53,7 +54,7 @@ object PdfService {
             }
             onProgress((index + 1).toFloat() / total.toFloat() * 0.5f)
         }
-        merger.mergeDocuments(null)
+        merger.mergeDocuments(MemoryUsageSetting.setupTempFileOnly())
         onProgress(1.0f)
         outputFile
     }
@@ -62,7 +63,7 @@ object PdfService {
         val originalSize = context.contentResolver.openFileDescriptor(sourceUri, "r")?.statSize ?: Long.MAX_VALUE
         
         context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-            PDDocument.load(inputStream).use { sourceDoc ->
+            PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly()).use { sourceDoc ->
                 val totalPages = sourceDoc.numberOfPages
                 if (compressionLevel == "Aggressive") {
                     sourceDoc.documentCatalog.acroForm = null
@@ -94,7 +95,7 @@ object PdfService {
     suspend fun getMetadata(context: Context, sourceUri: Uri): PdfMetadata = withContext(Dispatchers.IO) {
         var metadata = PdfMetadata("", "", "")
         context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-            PDDocument.load(inputStream).use { doc ->
+            PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
                 val info = doc.documentInformation
                 metadata = PdfMetadata(
                     title = info.title ?: "",
@@ -108,7 +109,7 @@ object PdfService {
 
     suspend fun editMetadata(context: Context, sourceUri: Uri, metadata: PdfMetadata, outputFile: File, onProgress: suspend (Float) -> Unit = {}): File = withContext(Dispatchers.IO) {
         context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-            PDDocument.load(inputStream).use { doc ->
+            PDDocument.load(inputStream, MemoryUsageSetting.setupTempFileOnly()).use { doc ->
                 val info = doc.documentInformation
                 info.title = metadata.title.takeIf { it.isNotBlank() }
                 info.author = metadata.author.takeIf { it.isNotBlank() }

@@ -391,7 +391,7 @@ fun PdfPreview(uri: Uri, modifier: Modifier = Modifier) {
         withContext(Dispatchers.IO) {
             try {
                 context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    PDDocument.load(inputStream).use { document ->
+                    PDDocument.load(inputStream, com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly()).use { document ->
                         if (document.numberOfPages > 0) {
                             val renderer = PDFRenderer(document)
                             bitmap = renderer.renderImageWithDPI(0, 72f) // Render first page
