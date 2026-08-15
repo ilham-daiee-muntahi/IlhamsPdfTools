@@ -9,12 +9,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
+data class PdfMetadata(val title: String, val author: String, val subject: String)
+
 object PdfService {
     fun init(context: Context) {
         PDFBoxResourceLoader.init(context)
     }
 
-    suspend fun splitPdf(context: Context, sourceUri: Uri, rangesString: String, outputDir: File, onProgress: suspend (Float) -> Unit = {}): List<File> = withContext(Dispatchers.IO) {
+    suspend fun splitPdf(context: Context, sourceUri: Uri, originalName: String, rangesString: String, outputDir: File, onProgress: suspend (Float) -> Unit = {}): List<File> = withContext(Dispatchers.IO) {
         val resultFiles = mutableListOf<File>()
         context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
             PDDocument.load(inputStream).use { sourceDoc ->
@@ -29,7 +31,7 @@ object PdfService {
                                 newDoc.importPage(sourceDoc.getPage(i - 1))
                             }
                         }
-                        val outputFile = File(outputDir, "split_part_${index + 1}.pdf")
+                        val outputFile = File(outputDir, "${originalName}_split_part_${index + 1}.pdf")
                         newDoc.save(outputFile)
                         resultFiles.add(outputFile)
                     }
@@ -56,10 +58,16 @@ object PdfService {
         outputFile
     }
 
-    suspend fun compressPdf(context: Context, sourceUri: Uri, outputFile: File, onProgress: suspend (Float) -> Unit = {}): File = withContext(Dispatchers.IO) {
+    suspend fun compressPdf(context: Context, sourceUri: Uri, outputFile: File, compressionLevel: String = "Standard", onProgress: suspend (Float) -> Unit = {}): File = withContext(Dispatchers.IO) {
+        val originalSize = context.contentResolver.openFileDescriptor(sourceUri, "r")?.statSize ?: Long.MAX_VALUE
+        
         context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
             PDDocument.load(inputStream).use { sourceDoc ->
                 val totalPages = sourceDoc.numberOfPages
+                if (compressionLevel == "Aggressive") {
+                    sourceDoc.documentCatalog.acroForm = null
+                    sourceDoc.documentCatalog.metadata = null
+                }
                 // Basic compression by copying to a new document (removes unreferenced objects)
                 PDDocument().use { newDoc ->
                     for (i in 0 until totalPages) {
@@ -68,6 +76,47 @@ object PdfService {
                     }
                     newDoc.save(outputFile)
                 }
+            }
+        }
+        
+        if (outputFile.length() >= originalSize && originalSize > 0) {
+            // Failsafe: compression made it larger or didn't help. 
+            context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                outputFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+        
+        outputFile
+    }
+
+    suspend fun getMetadata(context: Context, sourceUri: Uri): PdfMetadata = withContext(Dispatchers.IO) {
+        var metadata = PdfMetadata("", "", "")
+        context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+            PDDocument.load(inputStream).use { doc ->
+                val info = doc.documentInformation
+                metadata = PdfMetadata(
+                    title = info.title ?: "",
+                    author = info.author ?: "",
+                    subject = info.subject ?: ""
+                )
+            }
+        }
+        metadata
+    }
+
+    suspend fun editMetadata(context: Context, sourceUri: Uri, metadata: PdfMetadata, outputFile: File, onProgress: suspend (Float) -> Unit = {}): File = withContext(Dispatchers.IO) {
+        context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+            PDDocument.load(inputStream).use { doc ->
+                val info = doc.documentInformation
+                info.title = metadata.title.takeIf { it.isNotBlank() }
+                info.author = metadata.author.takeIf { it.isNotBlank() }
+                info.subject = metadata.subject.takeIf { it.isNotBlank() }
+                doc.documentInformation = info
+                onProgress(0.5f)
+                doc.save(outputFile)
+                onProgress(1.0f)
             }
         }
         outputFile

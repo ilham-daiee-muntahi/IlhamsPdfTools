@@ -55,6 +55,15 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.Collections
+import java.util.UUID
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.lazy.itemsIndexed
 
 val OrchisBg = Color(0xFF1E1E1E)
 val OrchisSurface = Color(0xFF2D2D2D)
@@ -65,6 +74,7 @@ val OrchisPrimary = Color(0xFF3584E4)
 val OrchisSplit = Color(0xFF2A4B7C) 
 val OrchisMerge = Color(0xFF633232)
 val OrchisCompress = Color(0xFF325463)
+val OrchisMetadata = Color(0xFF5E3C73)
 
 class MainActivity : ComponentActivity() {
     private val viewModel: PdfViewModel by viewModels()
@@ -81,7 +91,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class Screen { Home, Split, Merge, Compress, History }
+enum class Screen { Home, Split, Merge, Compress, Metadata, History, Settings }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,7 +102,7 @@ fun MainScreen(viewModel: PdfViewModel) {
         currentScreen = Screen.Home
     }
 
-    if (currentScreen == Screen.Home || currentScreen == Screen.History) {
+    if (currentScreen == Screen.Home || currentScreen == Screen.History || currentScreen == Screen.Settings) {
         BentoHomeScreen(
             currentScreen = currentScreen,
             onNavigate = { screen -> currentScreen = screen },
@@ -108,6 +118,7 @@ fun MainScreen(viewModel: PdfViewModel) {
                                 Screen.Split -> "Split PDF"
                                 Screen.Merge -> "Merge PDFs"
                                 Screen.Compress -> "Compress PDF"
+                                Screen.Metadata -> "Edit Metadata"
                                 else -> ""
                             },
                             color = OrchisText,
@@ -131,6 +142,7 @@ fun MainScreen(viewModel: PdfViewModel) {
                     Screen.Split -> SplitScreen(viewModel)
                     Screen.Merge -> MergeScreen(viewModel)
                     Screen.Compress -> CompressScreen(viewModel)
+                    Screen.Metadata -> MetadataScreen(viewModel)
                     else -> {}
                 }
             }
@@ -155,12 +167,7 @@ fun BentoHomeScreen(currentScreen: Screen, onNavigate: (Screen) -> Unit, viewMod
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text("Ilham's PDF Tools", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = OrchisText, letterSpacing = (-0.5).sp)
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                    Box(modifier = Modifier.size(8.dp).background(Color(0xFF2E7D32), CircleShape))
-                    Spacer(Modifier.width(6.dp))
-                    Text("SECURE LOCAL PROCESSING", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = OrchisTextMuted, letterSpacing = 1.sp)
-                }
+                Text("ILHAM'S PDF TOOLS", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = OrchisText, letterSpacing = (-0.5).sp)
             }
             Box(
                 modifier = Modifier.size(48.dp).background(OrchisSurface, CircleShape),
@@ -171,11 +178,13 @@ fun BentoHomeScreen(currentScreen: Screen, onNavigate: (Screen) -> Unit, viewMod
         }
 
         Box(modifier = Modifier.weight(1f)) {
-            if (currentScreen == Screen.History) {
-                HistoryScreen(viewModel)
-            } else {
-                val history by viewModel.historyState.collectAsStateWithLifecycle()
-                BentoGrid(onNavigate, history)
+            when (currentScreen) {
+                Screen.History -> HistoryScreen(viewModel)
+                Screen.Settings -> SettingsScreen(viewModel)
+                else -> {
+                    val history by viewModel.historyState.collectAsStateWithLifecycle()
+                    BentoGrid(onNavigate, history)
+                }
             }
         }
 
@@ -192,7 +201,7 @@ fun BentoHomeScreen(currentScreen: Screen, onNavigate: (Screen) -> Unit, viewMod
         ) {
             BottomNavItem("Tools", Icons.Default.Build, currentScreen == Screen.Home) { onNavigate(Screen.Home) }
             BottomNavItem("History", Icons.Default.History, currentScreen == Screen.History) { onNavigate(Screen.History) }
-            BottomNavItem("Settings", Icons.Default.Settings, false) {}
+            BottomNavItem("Settings", Icons.Default.Settings, currentScreen == Screen.Settings) { onNavigate(Screen.Settings) }
         }
     }
 }
@@ -200,21 +209,36 @@ fun BentoHomeScreen(currentScreen: Screen, onNavigate: (Screen) -> Unit, viewMod
 @Composable
 fun BentoGrid(onNavigate: (Screen) -> Unit, history: List<PdfHistory>) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BentoCard(
-            modifier = Modifier.weight(2f).fillMaxWidth(),
-            backgroundColor = OrchisSplit,
-            onClick = { onNavigate(Screen.Split) }
-        ) {
-            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                     Box(modifier = Modifier.background(Color.Black.copy(alpha=0.3f), RoundedCornerShape(12.dp)).padding(8.dp)) {
-                          Icon(Icons.Default.CallSplit, contentDescription = null, tint = OrchisText)
-                     }
-                     Text("POPULAR", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OrchisText, modifier = Modifier.background(Color.Black.copy(alpha=0.3f), CircleShape).padding(horizontal = 8.dp, vertical = 4.dp))
+        Row(modifier = Modifier.weight(2f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            BentoCard(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                backgroundColor = OrchisSplit,
+                onClick = { onNavigate(Screen.Split) }
+            ) {
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                    Box(modifier = Modifier.background(Color.Black.copy(alpha=0.3f), RoundedCornerShape(12.dp)).padding(8.dp)) {
+                        Icon(Icons.Default.CallSplit, contentDescription = null, tint = OrchisText)
+                    }
+                    Column {
+                        Text("Split", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = OrchisText)
+                        Text("By pages or ranges", fontSize = 12.sp, color = OrchisTextMuted, maxLines = 1)
+                    }
                 }
-                Column {
-                    Text("Split by Chapters", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = OrchisText)
-                    Text("Enter ranges like 1-5, 6-12...", fontSize = 14.sp, color = OrchisTextMuted, modifier = Modifier.padding(top = 4.dp))
+            }
+
+            BentoCard(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                backgroundColor = OrchisMetadata,
+                onClick = { onNavigate(Screen.Metadata) }
+            ) {
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                    Box(modifier = Modifier.background(Color.Black.copy(alpha=0.3f), RoundedCornerShape(12.dp)).padding(8.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = OrchisText)
+                    }
+                    Column {
+                        Text("Metadata", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = OrchisText)
+                        Text("Edit properties", fontSize = 12.sp, color = OrchisTextMuted)
+                    }
                 }
             }
         }
@@ -397,6 +421,72 @@ fun PdfPreview(uri: Uri, modifier: Modifier = Modifier) {
     }
 }
 
+fun getOriginalFileName(context: Context, uri: Uri): String {
+    var name = "document"
+    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (index != -1) {
+                name = cursor.getString(index)
+            }
+        }
+    }
+    return name.removeSuffix(".pdf")
+}
+
+@Composable
+fun SettingsScreen(viewModel: PdfViewModel) {
+    val context = LocalContext.current
+    var isClearing by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text("Settings", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = OrchisText, modifier = Modifier.padding(bottom = 16.dp))
+        
+        Card(
+            colors = CardDefaults.cardColors(containerColor = OrchisSurface),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().clickable {
+                viewModel.clearHistory()
+                android.widget.Toast.makeText(context, "History cleared", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        ) {
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Delete, contentDescription = null, tint = OrchisPrimary)
+                Spacer(Modifier.width(16.dp))
+                Text("Clear History", color = OrchisText, fontSize = 16.sp)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Card(
+            colors = CardDefaults.cardColors(containerColor = OrchisSurface),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().clickable {
+                isClearing = true
+                Thread {
+                    val cacheDirs = listOf("split", "merge", "compress")
+                    cacheDirs.forEach { 
+                        File(context.cacheDir, it).deleteRecursively()
+                    }
+                    (context as android.app.Activity).runOnUiThread {
+                        isClearing = false
+                        android.widget.Toast.makeText(context, "Cached files cleared", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }.start()
+            }
+        ) {
+            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (isClearing) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = OrchisPrimary)
+                } else {
+                    Icon(Icons.Default.CleaningServices, contentDescription = null, tint = OrchisPrimary)
+                }
+                Spacer(Modifier.width(16.dp))
+                Text("Clear Cached Files", color = OrchisText, fontSize = 16.sp)
+            }
+        }
+    }
+}
+
 @Composable
 fun SplitScreen(viewModel: PdfViewModel) {
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
@@ -468,11 +558,12 @@ fun SplitScreen(viewModel: PdfViewModel) {
                     progress = 0f
                     coroutineScope.launch {
                         try {
+                            val originalName = getOriginalFileName(context, uri)
                             val outputDir = File(context.cacheDir, "split").apply { mkdirs() }
-                            val files = PdfService.splitPdf(context, uri, ranges, outputDir) { p ->
+                            val files = PdfService.splitPdf(context, uri, originalName, ranges, outputDir) { p ->
                                 progress = p
                             }
-                            val name = uri.lastPathSegment ?: "Unknown PDF"
+                            val name = "${originalName}_split"
                             viewModel.addHistory(name, "Split", "Split into ${files.size} parts for ranges: $ranges", files.firstOrNull()?.absolutePath)
                             shareFiles(context, files)
                         } catch (e: Exception) {
@@ -494,18 +585,29 @@ fun SplitScreen(viewModel: PdfViewModel) {
     }
 }
 
+data class MergeItem(val id: String = UUID.randomUUID().toString(), val uri: Uri)
+
 @Composable
 fun MergeScreen(viewModel: PdfViewModel) {
-    var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var selectedItems by remember { mutableStateOf<List<MergeItem>>(emptyList()) }
     var isProcessing by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
-        onResult = { uris -> selectedUris = uris }
+        onResult = { uris ->
+            if (uris.isNotEmpty()) {
+                selectedItems = selectedItems + uris.map { MergeItem(uri = it) }
+            }
+        }
     )
+
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var draggingOffset by remember { mutableFloatStateOf(0f) }
+    var itemHeightPx by remember { mutableFloatStateOf(0f) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -521,17 +623,102 @@ fun MergeScreen(viewModel: PdfViewModel) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(48.dp), tint = OrchisPrimary)
                 Spacer(Modifier.height(8.dp))
-                Text(if (selectedUris.isEmpty()) "Tap to Select Multiple PDFs" else "${selectedUris.size} PDFs Selected", color = OrchisText)
+                Text(if (selectedItems.isEmpty()) "Tap to Select Multiple PDFs" else "${selectedItems.size} PDFs Selected", color = OrchisText)
             }
         }
         
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(selectedUris) { uri ->
-                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = OrchisCard)) {
+            itemsIndexed(selectedItems, key = { _, item -> item.id }) { index, item ->
+                val isDragging = draggingIndex == index
+                val zIndex = if (isDragging) 1f else 0f
+                val translationY = if (isDragging) draggingOffset else 0f
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .zIndex(zIndex)
+                        .graphicsLayer { this.translationY = translationY }
+                        .onGloballyPositioned { coordinates ->
+                            if (itemHeightPx == 0f) {
+                                val spacing = with(density) { 8.dp.toPx() }
+                                itemHeightPx = coordinates.size.height.toFloat() + spacing
+                            }
+                        }
+                        .pointerInput(index, itemHeightPx, selectedItems.size) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    draggingIndex = index
+                                    draggingOffset = 0f
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    draggingOffset += dragAmount.y
+
+                                    val currentIndex = draggingIndex ?: return@detectDragGesturesAfterLongPress
+                                    if (itemHeightPx > 0) {
+                                        if (draggingOffset > itemHeightPx && currentIndex < selectedItems.size - 1) {
+                                            val newList = selectedItems.toMutableList()
+                                            Collections.swap(newList, currentIndex, currentIndex + 1)
+                                            selectedItems = newList
+                                            draggingIndex = currentIndex + 1
+                                            draggingOffset -= itemHeightPx
+                                        } else if (draggingOffset < -itemHeightPx && currentIndex > 0) {
+                                            val newList = selectedItems.toMutableList()
+                                            Collections.swap(newList, currentIndex, currentIndex - 1)
+                                            selectedItems = newList
+                                            draggingIndex = currentIndex - 1
+                                            draggingOffset += itemHeightPx
+                                        }
+                                    }
+                                },
+                                onDragEnd = {
+                                    draggingIndex = null
+                                    draggingOffset = 0f
+                                },
+                                onDragCancel = {
+                                    draggingIndex = null
+                                    draggingOffset = 0f
+                                }
+                            )
+                        },
+                    colors = CardDefaults.cardColors(containerColor = if (isDragging) OrchisCard.copy(alpha = 0.8f) else OrchisCard),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 8.dp else 0.dp)
+                ) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        PdfPreview(uri = uri, modifier = Modifier.size(40.dp, 56.dp))
+                        Icon(Icons.Default.DragIndicator, contentDescription = "Drag to reorder", tint = OrchisTextMuted)
+                        Spacer(Modifier.width(8.dp))
+                        PdfPreview(uri = item.uri, modifier = Modifier.size(40.dp, 56.dp))
                         Spacer(Modifier.width(16.dp))
-                        Text(uri.lastPathSegment ?: "Unknown file", color = OrchisText)
+                        Text(getOriginalFileName(context, item.uri) + ".pdf", color = OrchisText, modifier = Modifier.weight(1f))
+                        
+                        Column {
+                            IconButton(onClick = {
+                                if (index > 0) {
+                                    val newList = selectedItems.toMutableList()
+                                    Collections.swap(newList, index, index - 1)
+                                    selectedItems = newList
+                                }
+                            }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up", tint = OrchisTextMuted)
+                            }
+                            IconButton(onClick = {
+                                if (index < selectedItems.size - 1) {
+                                    val newList = selectedItems.toMutableList()
+                                    Collections.swap(newList, index, index + 1)
+                                    selectedItems = newList
+                                }
+                            }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down", tint = OrchisTextMuted)
+                            }
+                        }
+                        
+                        IconButton(onClick = {
+                            val newList = selectedItems.toMutableList()
+                            newList.removeAt(index)
+                            selectedItems = newList
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = OrchisPrimary)
+                        }
                     }
                 }
             }
@@ -553,17 +740,25 @@ fun MergeScreen(viewModel: PdfViewModel) {
 
         Button(
             onClick = {
-                if (selectedUris.size > 1) {
+                if (selectedItems.size > 1) {
                     isProcessing = true
                     progress = 0f
                     coroutineScope.launch {
                         try {
+                            val urisToMerge = selectedItems.map { it.uri }
+                            val firstOriginal = getOriginalFileName(context, urisToMerge.first())
+                            val generatedName = if (urisToMerge.size == 2) {
+                                "${firstOriginal}_and_${getOriginalFileName(context, urisToMerge.last())}_merged.pdf"
+                            } else {
+                                "${firstOriginal}_and_${urisToMerge.size - 1}_others_merged.pdf"
+                            }
+                            
                             val outputDir = File(context.cacheDir, "merge").apply { mkdirs() }
-                            val outputFile = File(outputDir, "merged.pdf")
-                            val file = PdfService.mergePdfs(context, selectedUris, outputFile) { p ->
+                            val outputFile = File(outputDir, generatedName)
+                            val file = PdfService.mergePdfs(context, urisToMerge, outputFile) { p ->
                                 progress = p
                             }
-                            viewModel.addHistory("merged.pdf", "Merged", "Combined ${selectedUris.size} PDF documents", file.absolutePath)
+                            viewModel.addHistory(generatedName, "Merged", "Combined ${urisToMerge.size} PDF documents", file.absolutePath)
                             shareFile(context, file)
                         } catch (e: Exception) {
                             e.printStackTrace()
@@ -574,7 +769,7 @@ fun MergeScreen(viewModel: PdfViewModel) {
                     }
                 }
             },
-            enabled = selectedUris.size > 1 && !isProcessing,
+            enabled = selectedItems.size > 1 && !isProcessing,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = OrchisPrimary)
         ) {
@@ -589,6 +784,7 @@ fun CompressScreen(viewModel: PdfViewModel) {
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
+    var compressionLevel by remember { mutableStateOf("Standard") }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -617,6 +813,24 @@ fun CompressScreen(viewModel: PdfViewModel) {
 
         selectedUri?.let { uri ->
             PdfPreview(uri = uri, modifier = Modifier.size(140.dp, 196.dp))
+            
+            Spacer(Modifier.height(16.dp))
+            
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable {
+                    compressionLevel = if (compressionLevel == "Standard") "Aggressive" else "Standard"
+                },
+                colors = CardDefaults.cardColors(containerColor = OrchisSurface),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column {
+                        Text("Compression Rate", color = OrchisText, fontWeight = FontWeight.SemiBold)
+                        Text(if (compressionLevel == "Standard") "Lossless structure copy" else "Removes more metadata", color = OrchisTextMuted, fontSize = 12.sp)
+                    }
+                    Text(compressionLevel, color = OrchisPrimary, fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         Spacer(Modifier.weight(1f))
@@ -643,13 +857,14 @@ fun CompressScreen(viewModel: PdfViewModel) {
                     progress = 0f
                     coroutineScope.launch {
                         try {
+                            val originalName = getOriginalFileName(context, uri)
                             val outputDir = File(context.cacheDir, "compress").apply { mkdirs() }
-                            val outputFile = File(outputDir, "compressed.pdf")
-                            val file = PdfService.compressPdf(context, uri, outputFile) { p ->
+                            val outputFile = File(outputDir, "${originalName}_compressed.pdf")
+                            val file = PdfService.compressPdf(context, uri, outputFile, compressionLevel) { p ->
                                 progress = p
                             }
-                            val name = uri.lastPathSegment ?: "Unknown PDF"
-                            viewModel.addHistory(name, "Compressed", "Lossless structure compression applied.", file.absolutePath)
+                            val name = "${originalName}_compressed"
+                            viewModel.addHistory(name, "Compressed", "$compressionLevel compression applied.", file.absolutePath)
                             shareFile(context, file)
                         } catch (e: Exception) {
                             e.printStackTrace()
@@ -726,4 +941,151 @@ fun shareFile(context: Context, file: File) {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(intent, "Share PDF"))
+}
+
+@Composable
+fun MetadataScreen(viewModel: PdfViewModel) {
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var isProcessing by remember { mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(0f) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var title by remember { mutableStateOf("") }
+    var author by remember { mutableStateOf("") }
+    var subject by remember { mutableStateOf("") }
+    var isMetadataLoaded by remember { mutableStateOf(false) }
+
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                selectedUri = it
+                coroutineScope.launch {
+                    val meta = PdfService.getMetadata(context, it)
+                    title = meta.title
+                    author = meta.author
+                    subject = meta.subject
+                    isMetadataLoaded = true
+                }
+            }
+        }
+    )
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Button(
+            onClick = { launcher.launch(arrayOf("application/pdf")) },
+            modifier = Modifier.fillMaxWidth().height(120.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = OrchisSurface)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(48.dp), tint = OrchisPrimary)
+                Spacer(Modifier.height(8.dp))
+                Text(if (selectedUri == null) "Tap to Select PDF" else "Select Another PDF", color = OrchisText)
+            }
+        }
+
+        selectedUri?.let { uri ->
+            PdfPreview(uri = uri, modifier = Modifier.size(100.dp, 140.dp))
+            
+            Spacer(Modifier.height(8.dp))
+            
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Title") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = OrchisPrimary,
+                    unfocusedBorderColor = OrchisCard,
+                    focusedTextColor = OrchisText,
+                    unfocusedTextColor = OrchisText
+                )
+            )
+            OutlinedTextField(
+                value = author,
+                onValueChange = { author = it },
+                label = { Text("Author") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = OrchisPrimary,
+                    unfocusedBorderColor = OrchisCard,
+                    focusedTextColor = OrchisText,
+                    unfocusedTextColor = OrchisText
+                )
+            )
+            OutlinedTextField(
+                value = subject,
+                onValueChange = { subject = it },
+                label = { Text("Subject") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = OrchisPrimary,
+                    unfocusedBorderColor = OrchisCard,
+                    focusedTextColor = OrchisText,
+                    unfocusedTextColor = OrchisText
+                )
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        if (isProcessing) {
+            val animatedProgress by animateFloatAsState(
+                targetValue = progress,
+                animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
+                label = "progress"
+            )
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                color = OrchisPrimary,
+                trackColor = OrchisCard
+            )
+        }
+
+        Button(
+            onClick = {
+                selectedUri?.let { uri ->
+                    isProcessing = true
+                    progress = 0f
+                    coroutineScope.launch {
+                        try {
+                            val originalName = getOriginalFileName(context, uri)
+                            val outputDir = File(context.cacheDir, "metadata").apply { mkdirs() }
+                            val outputFile = File(outputDir, "${originalName}_edited.pdf")
+                            
+                            val meta = PdfMetadata(title.trim(), author.trim(), subject.trim())
+                            val file = PdfService.editMetadata(context, uri, meta, outputFile) { p ->
+                                progress = p
+                            }
+                            
+                            val name = "${originalName}_edited"
+                            viewModel.addHistory(name, "Metadata", "Updated document properties.", file.absolutePath)
+                            shareFile(context, file)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            android.widget.Toast.makeText(context, "Error updating metadata", android.widget.Toast.LENGTH_SHORT).show()
+                        } finally {
+                            isProcessing = false
+                            progress = 0f
+                        }
+                    }
+                }
+            },
+            enabled = selectedUri != null && isMetadataLoaded && !isProcessing,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = OrchisPrimary)
+        ) {
+            Text(if (isProcessing) "Saving..." else "Save Changes", modifier = Modifier.padding(vertical = 8.dp))
+        }
+    }
 }
