@@ -29,6 +29,8 @@ A fast, secure, and fully offline Android application for managing and processin
 3. Sync project with Gradle files.
 4. Build and run on an emulator or physical device running Android 7.0 (API 24) or higher.
 
+Or, download the APK from the releases page and install.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
